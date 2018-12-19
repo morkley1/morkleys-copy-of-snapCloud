@@ -35,6 +35,7 @@ local cached = package.loaded.cached
 local Users = package.loaded.Users
 local Projects = package.loaded.Projects
 local Tokens = package.loaded.Tokens
+local Remixes = package.loaded.Remixes
 
 require 'disk'
 require 'responses'
@@ -461,7 +462,8 @@ app:match('project', '/projects/:username/:projectname', respond_to({
         -- delta = -2 will fetch the last version before today
 
         return rawResponse(
-            '<snapdata>' ..
+            -- if users don't match, this project is being remixed and we need to attach its ID
+            '<snapdata' .. (users_match(self) and '>' or ' remixID="' .. project.id .. '">') ..
             (retrieve_from_disk(project.id, 'project.xml', self.params.delta) or '<project></project>') ..
             (retrieve_from_disk(project.id, 'media.xml', self.params.delta) or '<media></media>') ..
             '</snapdata>'
@@ -537,6 +539,15 @@ app:match('project', '/projects/:username/:projectname', respond_to({
                 ispublished = self.params.ispublished or false
             })
             project = Projects:find(self.params.username, self.params.projectname)
+
+            if body.remixID then
+                -- user is remixing a project
+                Remixes:create({
+                    original_project_id = body.remixID,
+                    remixed_project_id = project.id,
+                    created = db.format_date()
+                })
+            end
         end
 
         save_to_disk(project.id, 'project.xml', body.xml)
@@ -567,6 +578,16 @@ app:match('project_meta', '/projects/:username/:projectname/metadata', respond_t
 
         if not project then yield_error(err.nonexistent_project) end
         if not project.ispublic then assert_users_match(self, err.not_public_project) end
+
+        local remixed_from = Remixes:select('where remixed_project_id = ?', project.id)[1]
+
+        if remixed_from then
+            local original_project = Projects:select('where id = ?', remixed_from.original_project_id)[1]
+            project.remixedfrom = {
+                username = original_project.username,
+                projectname = original_project.projectname
+            }
+        end
 
         return jsonResponse(project)
     end),
@@ -605,8 +626,9 @@ app:match('project_meta', '/projects/:username/:projectname/metadata', respond_t
     end)
 }))
 
+
 app:match('project_versions', '/projects/:username/:projectname/versions', respond_to({
-    -- Methods:     GET, DELETE, POST
+    -- Methods:     GET
     -- Description: Get info about backed up project versions.
     -- Parameters:
     -- Body:        versions
@@ -631,6 +653,48 @@ app:match('project_versions', '/projects/:username/:projectname/versions', respo
             },
             version_metadata(project.id, -1),
             version_metadata(project.id, -2)
+        })
+    end)
+}))
+
+
+app:match('project_remixes', '/projects/:username/:projectname/remixes', respond_to({
+    -- Methods:     GET
+    -- Description: Get a list of all published remixes from a project
+    -- Parameters:  page, pagesize
+    -- Body:
+
+    OPTIONS = cors_options,
+    GET = capture_errors(function (self)
+        local project = Projects:find(self.params.username, self.params.projectname)
+
+        if not project then yield_error(err.nonexistent_project) end
+        if not project.ispublic then assert_users_match(self, err.not_public_project) end
+
+        local paginator =
+            Remixes:paginated(
+                'where original_project_id = ?',
+                project.id,
+                { per_page = self.params.pagesize or 16 }
+            )
+
+        local remixes_metadata = self.params.page and paginator:get_page(self.params.page) or paginator:get_all()
+        local remixes = {}
+
+        for i, remix in pairs(remixes_metadata) do
+            remixed_project = Projects:select('where id = ? and ispublished', remix.remixed_project_id)[1];
+            if (remixed_project) then
+                -- Lazy Thumbnail generation
+                remixed_project.thumbnail =
+                    retrieve_from_disk(remix.remixed_project_id, 'thumbnail') or
+                        generate_thumbnail(remix.remixed_project_id)
+                table.insert(remixes, remixed_project)
+            end
+        end
+
+        return jsonResponse({
+            pages = self.params.page and paginator:num_pages() or nil,
+            projects = remixes
         })
     end)
 }))
@@ -661,55 +725,3 @@ app:match('project_thumb', '/projects/:username/:projectname/thumbnail', respond
     }))
 }))
 
-
-app:match('remix', '/projects/:username/:projectname/remix', respond_to({
-    -- Methods:     POST
-    -- Description: Remix a project as the currently logged in user.
-
-    OPTIONS = cors_options,
-    POST = capture_errors(function(self)
-        local original_project = Projects:find(self.params.username, self.params.projectname)
-        if not original_project then yield_error(err.nonexistent_project) end
-
-        local visitor = Users:find(self.session.username)
-        if not visitor then yield_error(err.not_logged_in) end
-
-        Projects:create({
-                projectname = original_project.projectname,
-                username = visitor.username,
-                created = db.format_date(),
-                lastupdated = db.format_date(),
-                lastshared = db.format_date(),
-                firstpublished = original_project.ispublished and db.format_date() or nil,
-                notes = original_project.notes,
-                ispublic = original_project.ispublic,
-                ispublished = original_project.ispublished,
-                remixes = table.insert(original_project.remixes or {}, original_project.id)
-            })
-        project = Projects:find(self.params.username, self.params.projectname)
-
-        save_to_disk(
-            project.id,
-            'project.xml',
-            retrieve_from_disk(original_project.id, 'project.xml')
-        )
-        save_to_disk(
-            project.id,
-            'thumbnail',
-            retrieve_from_disk(original_project.id, 'thumbnail')
-        )
-        save_to_disk(
-            project.id,
-            'media.xml',
-            retrieve_from_disk(original_project.id, 'media.xml')
-        )
-        if not (retrieve_from_disk(project.id, 'project.xml')
-            and retrieve_from_disk(project.id, 'thumbnail')
-            and retrieve_from_disk(project.id, 'media.xml')) then
-            project:delete()
-            yield_error('Could not remix project ' .. self.params.projectname)
-        else
-            return okResponse('project ' .. self.params.projectname .. ' remixed')
-        end
-    end)
-}))
