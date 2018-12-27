@@ -1,10 +1,30 @@
 version: '3'
 services:
   app:
-    image: snapcloud:latest
+    build:
+      context: ./
+    image: snapcloud/snapcloud
+    volumes:
+      - app-sync:/app:nocopy
+      - ../docker/keys:/root/.ssh/
+    ports:
+      - '3000:3000'
+    working_dir: /app
+    links:
+      - postgres
+    tty: true
+    stdin_open: true
   postgres:
     restart: always
-    image: postgres:10
+    volumes:
+      - ../docker/data/postgres:/var/lib/postgresql/data
+    image: snapcloud/postgresql-multiple-databases:latest
     environment:
-      POSTGRES_USER: snapcloud
-      POSTGRES_PASSWORD: snapcloud
+      POSTGRES_MULTIPLE_DATABASES: snapcloud,snapcloud_test
+      POSTGRES_USER: cloud
+      POSTGRES_PASSWORD: snap-cloud-password
+
+
+volumes:
+  app-sync:
+    external: true
