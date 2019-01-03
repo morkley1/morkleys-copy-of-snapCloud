@@ -474,11 +474,20 @@ app:match('project', '/projects/:username/:projectname', respond_to({
         if not users_match(self) then assert_admin(self) end
 
         local project = Projects:find(self.params.username, self.params.projectname)
-        delete_directory(project.id)
+        local id = project.id
+
+        -- Check out whether this project was a remix of some other project, then delete the remix
+        local remix = Remixes:select('where remixed_project_id = ?', id)[1]
+        if remix then remix:delete() end
+
+        -- Check out whether this project has been remixed by other projects, then orphan these remixes
+        local query = db.query('update remixes set original_project_id = null where original_project_id = ?', id);
+
         if not (project:delete()) then
-            yield_error('Could not delete user ' .. self.params.username)
+            yield_error('Could not delete project ' .. self.params.projectname)
         else
-            return okResponse('User ' .. self.params.username .. ' has been removed.')
+            delete_directory(id)
+            return okResponse('Project ' .. self.params.projectname .. ' has been removed.')
         end
     end),
     POST = capture_errors(function (self)
@@ -582,11 +591,18 @@ app:match('project_meta', '/projects/:username/:projectname/metadata', respond_t
         local remixed_from = Remixes:select('where remixed_project_id = ?', project.id)[1]
 
         if remixed_from then
-            local original_project = Projects:select('where id = ?', remixed_from.original_project_id)[1]
-            project.remixedfrom = {
-                username = original_project.username,
-                projectname = original_project.projectname
-            }
+            if remixed_from.original_project_id then
+                local original_project = Projects:select('where id = ?', remixed_from.original_project_id)[1]
+                project.remixedfrom = {
+                    username = original_project.username,
+                    projectname = original_project.projectname
+                }
+            else
+                project.remixedfrom = {
+                    username = nil,
+                    projectname = nil
+                }
+            end
         end
 
         return jsonResponse(project)
