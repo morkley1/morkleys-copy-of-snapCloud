@@ -5,15 +5,14 @@ services:
       context: ./
     image: snapcloud/snapcloud
     volumes:
-      - app-sync:/app:nocopy
       - ../docker/keys:/root/.ssh/
     ports:
-      - '3000:3000'
+      - '80:80'
+      - '443:443'
     working_dir: /app
     links:
       - postgres
-    tty: true
-    stdin_open: true
+    command: ["lapis" "server"]
   postgres:
     restart: always
     volumes:
@@ -23,8 +22,3 @@ services:
       POSTGRES_MULTIPLE_DATABASES: snapcloud,snapcloud_test
       POSTGRES_USER: cloud
       POSTGRES_PASSWORD: snap-cloud-password
-
-
-volumes:
-  app-sync:
-    external: true

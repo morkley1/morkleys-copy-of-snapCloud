@@ -32,7 +32,7 @@ EXPOSE 80
 
 # Start the app
 # CMD ["lapis", "server"]
-CMD ["bash"]
+# CMD ["bash"]
 # TASKS
 # * install snapcloud daemon (do that matter?)
 # * figure out logging + config hooks

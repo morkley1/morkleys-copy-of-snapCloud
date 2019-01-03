@@ -1,0 +1,21 @@
+# This file is a set of *overrides* to docker-compose.yaml
+# When you run docker-sync-stack start both files are applied
+version: '3'
+
+services:
+  app:
+    volumes:
+      - app-sync:/app:nocopy
+      - ../docker/keys:/root/.ssh/
+    ports:
+      - '8080:8080'
+    environment:
+      - PORT: 8080
+      - DATABASE_URL: postgres:5432
+      - LAPIS_ENVIRONMENT: development
+    tty: true
+    stdin_open: true
+
+volumes:
+  app-sync:
+    external: true

@@ -1,0 +1,5 @@
+version: '3'
+
+syncs:
+  app-sync:
+    source: './'
