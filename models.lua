@@ -67,7 +67,7 @@ package.loaded.Users = Model:extend('active_users', {
         return unique_email
     end,
     shares_email_with_others = function (self)
-        count = package.loaded.Users:count("email like '%'", self.email)
+        count = package.loaded.Users:count("unique_email = '%'", self.email)
         return count > 1
     end,
     cannot_access_forum = function (self)
