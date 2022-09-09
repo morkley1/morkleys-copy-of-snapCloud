@@ -79,6 +79,7 @@ domain_allowed['snap.techlit.org'] = true
 domain_allowed['bjc.techlit.org'] = true
 domain_allowed['amazingrobots.net'] = true
 domain_allowed['microblocks.fun'] = true
+domain_allowed['morkley1.github.io'] = true
 -- Development
 domain_allowed['localhost'] = true
 
